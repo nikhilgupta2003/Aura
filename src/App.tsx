@@ -44,7 +44,19 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-const Player = ReactPlayer as any;
+const Player = (props: any) => {
+  const { onDuration, ...rest } = props;
+  return (
+    <ReactPlayer 
+      {...rest} 
+      onDuration={onDuration}
+      wrapper={({ children, ...wrapperProps }: any) => {
+        const { onDuration: _, ...safeProps } = wrapperProps;
+        return <div {...safeProps}>{children}</div>;
+      }}
+    />
+  );
+};
 
 type View = 'global' | 'indian' | 'search' | 'artist' | 'album';
 
@@ -74,6 +86,7 @@ export default function App() {
   const [duration, setDuration] = useState(0);
   const [lyrics, setLyrics] = useState<string | null>(null);
   const [showLyrics, setShowLyrics] = useState(false);
+  const playerRef = useRef<any>(null);
   const [isFetchingLyrics, setIsFetchingLyrics] = useState(false);
   const [currentView, setCurrentView] = useState<View>('global');
   const [queue, setQueue] = useState<Song[]>([]);
@@ -691,6 +704,7 @@ export default function App() {
         {currentSong && (
           <div className="hidden">
             <Player
+              ref={playerRef}
               url={currentSong.youtubeUrl}
               playing={isPlaying}
               volume={volume}
