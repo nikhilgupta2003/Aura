@@ -18,19 +18,50 @@ import {
   TrendingUp,
   MoreHorizontal,
   Heart,
-  Languages
+  Languages,
+  ListMusic,
+  Plus,
+  Trash2,
+  X,
+  ArrowLeft,
+  Disc
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactPlayer from 'react-player';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { searchSongs, getGlobalHits, getLyrics, type Song } from './services/musicService';
+import { 
+  searchSongs, 
+  getGlobalHits, 
+  getIndianHits, 
+  getLyrics, 
+  getArtistDetails,
+  getAlbumDetails,
+  type Song 
+} from './services/musicService';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
 const Player = ReactPlayer as any;
+
+type View = 'global' | 'indian' | 'search' | 'artist' | 'album';
+
+interface ArtistDetails {
+  name: string;
+  bio: string;
+  topSongs: Song[];
+  image: string;
+}
+
+interface AlbumDetails {
+  title: string;
+  artist: string;
+  songs: Song[];
+  cover: string;
+  year: string;
+}
 
 export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,6 +75,12 @@ export default function App() {
   const [lyrics, setLyrics] = useState<string | null>(null);
   const [showLyrics, setShowLyrics] = useState(false);
   const [isFetchingLyrics, setIsFetchingLyrics] = useState(false);
+  const [currentView, setCurrentView] = useState<View>('global');
+  const [queue, setQueue] = useState<Song[]>([]);
+  const [showQueue, setShowQueue] = useState(false);
+  const [selectedArtist, setSelectedArtist] = useState<ArtistDetails | null>(null);
+  const [selectedAlbum, setSelectedAlbum] = useState<AlbumDetails | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
 
   useEffect(() => {
     loadInitialHits();
@@ -60,9 +97,34 @@ export default function App() {
 
   const loadInitialHits = async () => {
     setIsLoading(true);
+    setCurrentView('global');
     const hits = await getGlobalHits();
     setSongs(hits);
     setIsLoading(false);
+  };
+
+  const loadIndianHits = async () => {
+    setIsLoading(true);
+    setCurrentView('indian');
+    const hits = await getIndianHits();
+    setSongs(hits);
+    setIsLoading(false);
+  };
+
+  const loadArtist = async (artistName: string) => {
+    setIsNavigating(true);
+    setCurrentView('artist');
+    const details = await getArtistDetails(artistName);
+    setSelectedArtist(details);
+    setIsNavigating(false);
+  };
+
+  const loadAlbum = async (albumName: string, artistName: string) => {
+    setIsNavigating(true);
+    setCurrentView('album');
+    const details = await getAlbumDetails(albumName, artistName);
+    setSelectedAlbum(details);
+    setIsNavigating(false);
   };
 
   const fetchLyrics = async (song: Song) => {
@@ -77,6 +139,7 @@ export default function App() {
     if (!searchQuery.trim()) return;
     
     setIsLoading(true);
+    setCurrentView('search');
     const results = await searchSongs(searchQuery);
     setSongs(results);
     setIsLoading(false);
@@ -85,6 +148,25 @@ export default function App() {
   const playSong = (song: Song) => {
     setCurrentSong(song);
     setIsPlaying(true);
+  };
+
+  const addToQueue = (song: Song) => {
+    setQueue(prev => [...prev, { ...song, id: `${song.id}-q-${Date.now()}` }]);
+  };
+
+  const removeFromQueue = (index: number) => {
+    setQueue(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const playNext = () => {
+    if (queue.length > 0) {
+      const nextSong = queue[0];
+      setQueue(prev => prev.slice(1));
+      setCurrentSong(nextSong);
+      setIsPlaying(true);
+    } else {
+      setIsPlaying(false);
+    }
   };
 
   const togglePlay = () => setIsPlaying(!isPlaying);
@@ -120,10 +202,23 @@ export default function App() {
           <nav className="space-y-4">
             <button 
               onClick={loadInitialHits}
-              className="flex items-center gap-4 text-white/60 hover:text-white transition-colors w-full text-left"
+              className={cn(
+                "flex items-center gap-4 transition-colors w-full text-left",
+                currentView === 'global' ? "text-[#ff4e00]" : "text-white/60 hover:text-white"
+              )}
             >
               <Home size={20} />
               <span className="font-medium">Home</span>
+            </button>
+            <button 
+              onClick={loadIndianHits}
+              className={cn(
+                "flex items-center gap-4 transition-colors w-full text-left",
+                currentView === 'indian' ? "text-[#ff4e00]" : "text-white/60 hover:text-white"
+              )}
+            >
+              <Globe size={20} />
+              <span className="font-medium">Indian Hits</span>
             </button>
             <button className="flex items-center gap-4 text-white/60 hover:text-white transition-colors w-full text-left">
               <TrendingUp size={20} />
@@ -172,10 +267,138 @@ export default function App() {
 
         {/* Scrollable Area */}
         <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-          <section>
+          {(currentView === 'artist' || currentView === 'album') && !isNavigating && (
+            <button 
+              onClick={() => setCurrentView('global')}
+              className="mb-6 flex items-center gap-2 text-white/40 hover:text-white transition-colors group"
+            >
+              <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+              <span>Back to Home</span>
+            </button>
+          )}
+
+          {isNavigating ? (
+            <div className="h-full flex items-center justify-center">
+              <div className="w-12 h-12 border-4 border-[#ff4e00]/20 border-t-[#ff4e00] rounded-full animate-spin" />
+            </div>
+          ) : currentView === 'artist' && selectedArtist ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="space-y-12"
+            >
+              <div className="flex flex-col md:flex-row gap-8 items-end">
+                <img 
+                  src={selectedArtist.image} 
+                  alt={selectedArtist.name} 
+                  className="w-64 h-64 rounded-full object-cover shadow-2xl"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="flex-1">
+                  <p className="text-xs uppercase tracking-widest text-[#ff4e00] font-bold mb-2">Verified Artist</p>
+                  <h1 className="text-7xl font-bold tracking-tighter mb-6">{selectedArtist.name}</h1>
+                  <p className="text-white/60 max-w-2xl leading-relaxed">{selectedArtist.bio}</p>
+                </div>
+              </div>
+
+              <section>
+                <h2 className="text-2xl font-bold mb-6">Popular Tracks</h2>
+                <div className="space-y-2">
+                  {selectedArtist.topSongs.map((song, i) => (
+                    <div 
+                      key={song.id} 
+                      className="group flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                      onClick={() => playSong(song)}
+                    >
+                      <span className="w-6 text-center text-white/20 group-hover:text-white">{i + 1}</span>
+                      <img src={song.thumbnail} className="w-12 h-12 rounded object-cover" referrerPolicy="no-referrer" />
+                      <div className="flex-1">
+                        <p className="font-medium">{song.title}</p>
+                        {song.album && (
+                          <p 
+                            className="text-xs text-white/40 hover:text-white transition-colors cursor-pointer"
+                            onClick={(e) => { e.stopPropagation(); loadAlbum(song.album!, song.artist); }}
+                          >
+                            {song.album}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); addToQueue(song); }}
+                          className="p-2 hover:text-[#ff4e00]"
+                        >
+                          <Plus size={18} />
+                        </button>
+                        <Heart size={18} className="hover:text-[#ff4e00]" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </motion.div>
+          ) : currentView === 'album' && selectedAlbum ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="space-y-12"
+            >
+              <div className="flex flex-col md:flex-row gap-8 items-end">
+                <img 
+                  src={selectedAlbum.cover} 
+                  alt={selectedAlbum.title} 
+                  className="w-64 h-64 rounded-2xl object-cover shadow-2xl"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="flex-1">
+                  <p className="text-xs uppercase tracking-widest text-[#ff4e00] font-bold mb-2">Album • {selectedAlbum.year}</p>
+                  <h1 className="text-7xl font-bold tracking-tighter mb-4">{selectedAlbum.title}</h1>
+                  <p 
+                    className="text-2xl font-medium text-white/60 hover:text-white cursor-pointer transition-colors"
+                    onClick={() => loadArtist(selectedAlbum.artist)}
+                  >
+                    {selectedAlbum.artist}
+                  </p>
+                </div>
+              </div>
+
+              <section>
+                <div className="grid grid-cols-[40px_1fr_auto] px-4 py-2 border-b border-white/10 text-xs uppercase tracking-widest text-white/40 mb-4">
+                  <span>#</span>
+                  <span>Title</span>
+                  <span>Actions</span>
+                </div>
+                <div className="space-y-1">
+                  {selectedAlbum.songs.map((song, i) => (
+                    <div 
+                      key={song.id} 
+                      className="group grid grid-cols-[40px_1fr_auto] items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                      onClick={() => playSong(song)}
+                    >
+                      <span className="text-center text-white/20 group-hover:text-white">{i + 1}</span>
+                      <div className="flex items-center gap-4">
+                        <img src={song.thumbnail} className="w-10 h-10 rounded object-cover" referrerPolicy="no-referrer" />
+                        <p className="font-medium">{song.title}</p>
+                      </div>
+                      <div className="flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); addToQueue(song); }}
+                          className="p-2 hover:text-[#ff4e00]"
+                        >
+                          <Plus size={18} />
+                        </button>
+                        <Heart size={18} className="hover:text-[#ff4e00]" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </motion.div>
+          ) : (
+            <section>
             <div className="flex items-end justify-between mb-6">
               <h2 className="text-3xl font-bold tracking-tight">
-                {searchQuery ? `Results for "${searchQuery}"` : "Global Hits"}
+                {currentView === 'search' ? `Results for "${searchQuery}"` : currentView === 'indian' ? "Indian Hits" : "Global Hits"}
               </h2>
               <button className="text-sm text-[#ff4e00] hover:underline">Show all</button>
             </div>
@@ -210,22 +433,46 @@ export default function App() {
                           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                           referrerPolicy="no-referrer"
                         />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <div className="w-12 h-12 bg-[#ff4e00] rounded-full flex items-center justify-center shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-transform">
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); addToQueue(song); }}
+                            className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center hover:bg-white/40 transition-colors"
+                            title="Add to Queue"
+                          >
+                            <Plus size={20} />
+                          </button>
+                          <div 
+                            className="w-12 h-12 bg-[#ff4e00] rounded-full flex items-center justify-center shadow-xl transform translate-y-4 group-hover:translate-y-0 transition-transform"
+                            onClick={() => playSong(song)}
+                          >
                             <Play fill="white" size={24} />
                           </div>
                         </div>
                       </div>
                       <h3 className="font-semibold truncate">{song.title}</h3>
-                      <p className="text-sm text-white/40 truncate">{song.artist}</p>
+                      <p 
+                        className="text-sm text-white/40 truncate hover:text-[#ff4e00] transition-colors cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); loadArtist(song.artist); }}
+                      >
+                        {song.artist}
+                      </p>
+                      {song.album && (
+                        <p 
+                          className="text-xs text-white/20 truncate hover:text-white transition-colors cursor-pointer mt-1"
+                          onClick={(e) => { e.stopPropagation(); loadAlbum(song.album!, song.artist); }}
+                        >
+                          {song.album}
+                        </p>
+                      )}
                     </motion.div>
                   ))}
                 </AnimatePresence>
               </div>
             )}
           </section>
-        </div>
-      </main>
+        )}
+      </div>
+    </main>
 
       {/* Lyrics Overlay */}
       <AnimatePresence>
@@ -274,6 +521,66 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Queue Overlay */}
+      <AnimatePresence>
+        {showQueue && (
+          <motion.div
+            initial={{ opacity: 0, x: '100%' }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: '100%' }}
+            className="fixed top-0 right-0 bottom-24 w-80 bg-black/90 backdrop-blur-3xl z-50 border-l border-white/10 flex flex-col"
+          >
+            <div className="p-6 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                <ListMusic size={20} className="text-[#ff4e00]" />
+                Queue
+              </h3>
+              <button onClick={() => setShowQueue(false)} className="text-white/40 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              {queue.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-white/20 gap-4">
+                  <Music2 size={48} />
+                  <p className="text-sm">Queue is empty</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {queue.map((song, i) => (
+                    <div key={song.id} className="group flex items-center gap-3 bg-white/5 p-2 rounded-lg hover:bg-white/10 transition-colors">
+                      <img src={song.thumbnail} className="w-10 h-10 rounded object-cover" referrerPolicy="no-referrer" />
+                      <div className="flex-1 overflow-hidden">
+                        <p className="text-sm font-medium truncate">{song.title}</p>
+                        <p className="text-xs text-white/40 truncate">{song.artist}</p>
+                      </div>
+                      <button 
+                        onClick={() => removeFromQueue(i)}
+                        className="opacity-0 group-hover:opacity-100 text-white/40 hover:text-red-500 transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {queue.length > 0 && (
+              <div className="p-4 border-t border-white/10">
+                <button 
+                  onClick={() => setQueue([])}
+                  className="w-full py-2 text-xs uppercase tracking-widest font-bold text-white/40 hover:text-white transition-colors"
+                >
+                  Clear Queue
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Player Bar */}
       <footer className="fixed bottom-0 left-0 right-0 h-24 bg-black/80 backdrop-blur-2xl border-t border-white/10 px-6 flex items-center justify-between z-40">
         {/* Current Song Info */}
@@ -288,7 +595,12 @@ export default function App() {
               />
               <div className="overflow-hidden">
                 <h4 className="font-medium truncate">{currentSong.title}</h4>
-                <p className="text-xs text-white/40 truncate">{currentSong.artist}</p>
+                <p 
+                  className="text-xs text-white/40 truncate hover:text-[#ff4e00] cursor-pointer transition-colors"
+                  onClick={() => loadArtist(currentSong.artist)}
+                >
+                  {currentSong.artist}
+                </p>
                 {/* Lyrics Toggle Button */}
                 <button 
                   onClick={() => setShowLyrics(!showLyrics)}
@@ -360,6 +672,16 @@ export default function App() {
             onChange={(e) => setVolume(parseFloat(e.target.value))}
             className="w-24 accent-[#ff4e00] bg-white/10 h-1 rounded-full appearance-none cursor-pointer"
           />
+          <button 
+            onClick={() => setShowQueue(!showQueue)}
+            className={cn(
+              "p-2 rounded-full transition-colors",
+              showQueue ? "bg-[#ff4e00] text-white" : "text-white/40 hover:text-white"
+            )}
+            title="Queue"
+          >
+            <ListMusic size={20} />
+          </button>
           <button className="text-white/40 hover:text-white transition-colors">
             <MoreHorizontal size={20} />
           </button>
@@ -374,7 +696,7 @@ export default function App() {
               volume={volume}
               onProgress={handleProgress}
               onDuration={setDuration}
-              onEnded={() => setIsPlaying(false)}
+              onEnded={playNext}
             />
           </div>
         )}
